@@ -1,0 +1,58 @@
+name: Error Lobotomizer
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-shout:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run code check and parse errors
+      id: checker
+      # continue-on-error allows the job to keep running even if errors are found
+      continue-on-error: true 
+      run: |
+        # Run your code checker, convert output format to 1 error per line, 
+        # and save it to a temporary file.
+        npm run lint -- --format compact > errors.txt 2>&1
+        
+    - name: Say Fire In The Hole for each error
+      run: |
+        if [ -f errors.txt ]; then
+          # Count lines containing error indicators (adjust keyword based on your tool)
+          ERROR_COUNT=$(grep -c -i "error" errors.txt || true)
+          
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "Found $ERROR_COUNT errors!"
+            
+            # Loop for the exact number of error matches found
+            for ((i=1; i<=ERROR_COUNT; i++)); do
+              echo "🔥 Fire in the hole! (Error #$i)"
+            done
+            
+            # Print the actual errors below the flags so you can fix them
+            echo -e "\n--- Actual Error Logs ---"
+            cat errors.txt
+            
+            # Intentionally fail the step so the pull request check turns red
+            exit 1
+          else
+            echo "✨ Water on the hill!"
+          fi
+        else
+          echo "No error report was generated."
+        fi
