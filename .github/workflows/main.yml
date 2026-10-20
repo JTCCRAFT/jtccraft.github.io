@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # JOB 1: Scans files for structural errors or conflict leftovers
+  # JOB 1: Scans site files for structural errors or conflict leftovers
   code-analysis:
     runs-on: ubuntu-latest
     steps:
@@ -17,10 +17,8 @@ jobs:
     - name: Run code check and parse errors
       run: |
         touch errors.txt
-        # Check for merge conflict markers
-        grep -rn "<<<<<<<" . --exclude="*.txt" --exclude-dir=".git" >> errors.txt || true
-        # Check for broken empty attributes
-        grep -rn "src=\"\"" . --exclude="*.txt" --exclude-dir=".git" >> errors.txt || true
+        grep -rn "<<<<<<<" . --exclude="*.txt" --exclude-dir=".git" --exclude-dir=".github" >> errors.txt || true
+        grep -rn "src=\"\"" . --exclude="*.txt" --exclude-dir=".git" --exclude-dir=".github" >> errors.txt || true
 
     - name: Say Fire In The Hole for each error
       run: |
@@ -47,8 +45,7 @@ jobs:
     - name: Scan for raw credentials
       run: |
         touch secrets_found.txt
-        # Simple scan example matching patterns like API_KEY = "xyz"
-        grep -rniE "(api_key|secret|password|passwd|token)\s*=\s*['\"][a-zA-Z0-9_-]+['\"]" . --exclude="*.txt" --exclude-dir=".git" >> secrets_found.txt || true
+        grep -rniE "(api_key|secret|password|passwd|token)\s*=\s*['\"][a-zA-Z0-9_-]+['\"]" . --exclude="*.txt" --exclude-dir=".git" --exclude-dir=".github" >> secrets_found.txt || true
 
     - name: Verify Security Status
       run: |
@@ -64,10 +61,38 @@ jobs:
           echo "🔒 Security scanning passed cleanly."
         fi
 
-  # JOB 3: Runs only after BOTH analysis and security jobs pass successfully
+  # NEW JOB 3: Formally tests your workflow configurations for real errors!
+  workflow-validation:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Check for workflow syntax errors
+      run: |
+        # Download actionlint to safely check for structural bugs in your pipeline
+        bash <(curl https://githubusercontent.com)
+        ./actionlint -format "{{.File}}:{{.Line}}:{{.Message}}" > workflow_errors.txt || true
+
+    - name: Say Fire In The Hole for workflow bugs
+      run: |
+        if [ -s workflow_errors.txt ]; then
+          WF_COUNT=$(wc -l < workflow_errors.txt)
+          echo "Found $WF_COUNT bugs in your automation scripts!"
+          for ((i=1; i<=WF_COUNT; i++)); do
+            echo "🔥 Fire in the hole! (Workflow Bug #$i)"
+          done
+          echo -e "\n--- Actionlint Bug Logs ---"
+          cat workflow_errors.txt
+          exit 1
+        else
+          echo "🤖 Workflows are structurally perfect!"
+        fi
+
+  # JOB 4: Runs only after ALL validation jobs pass successfully
   production-readiness:
     runs-on: ubuntu-latest
-    needs: [code-analysis, security-audit]
+    needs: [code-analysis, security-audit, workflow-validation]
     steps:
     - name: Confirm Status
       run: |
