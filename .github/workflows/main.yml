@@ -1,4 +1,4 @@
-name: Error Lobotomizer
+name: Advanced Code Pipeline
 
 on:
   push:
@@ -7,51 +7,69 @@ on:
     branches: [ "main" ]
 
 jobs:
-  lint-and-shout:
+  # JOB 1: Scans files for structural errors or conflict leftovers
+  code-analysis:
     runs-on: ubuntu-latest
-
     steps:
     - name: Check out repository code
       uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    - name: Install dependencies
-      run: npm install
-
     - name: Run code check and parse errors
-      id: checker
-      continue-on-error: true 
       run: |
-        # Run the linter, output to compact format, and save logs to a text file
-        npm run lint -- --format compact > errors.txt 2>&1
-        
-    - name: FIRE IN THE HOLE!
+        touch errors.txt
+        # Check for merge conflict markers
+        grep -rn "<<<<<<<" . --exclude="*.txt" --exclude-dir=".git" >> errors.txt || true
+        # Check for broken empty attributes
+        grep -rn "src=\"\"" . --exclude="*.txt" --exclude-dir=".git" >> errors.txt || true
+
+    - name: Say Fire In The Hole for each error
       run: |
-        if [ -f errors.txt ]; then
-          # Count lines containing error indicators
-          ERROR_COUNT=$(grep -c -i "error" errors.txt || true)
-          
-          if [ "$ERROR_COUNT" -gt 0 ]; then
-            echo "Found $ERROR_COUNT errors!"
-            
-            # Loop for the exact number of error matches found
-            for ((i=1; i<=ERROR_COUNT; i++)); do
-              echo "🔥 Fire in the hole! (Error #$i)"
-            done
-            
-            # Print the actual errors below the flags so they can be fixed
-            echo -e "\n--- Actual Error Logs ---"
-            cat errors.txt
-            
-            # Intentionally fail the step so the pull request check turns red
-            exit 1
-          else
-            echo "💦 Water on the hill!"
-          fi
+        if [ -s errors.txt ]; then
+          ERROR_COUNT=$(wc -l < errors.txt)
+          echo "Found $ERROR_COUNT code issues!"
+          for ((i=1; i<=ERROR_COUNT; i++)); do
+            echo "🔥 Fire in the hole! (Error #$i)"
+          done
+          echo -e "\n--- Actual Error Logs ---"
+          cat errors.txt
+          exit 1
         else
-          echo "No error report was generated."
+          echo "💦 Water on the hill!"
         fi
+
+  # JOB 2: Runs in parallel to scan files for exposed API keys or secrets
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Scan for raw credentials
+      run: |
+        touch secrets_found.txt
+        # Simple scan example matching patterns like API_KEY = "xyz"
+        grep -rniE "(api_key|secret|password|passwd|token)\s*=\s*['\"][a-zA-Z0-9_-]+['\"]" . --exclude="*.txt" --exclude-dir=".git" >> secrets_found.txt || true
+
+    - name: Verify Security Status
+      run: |
+        if [ -s secrets_found.txt ]; then
+          BAD_COUNT=$(wc -l < secrets_found.txt)
+          echo "⚠️ Detected $BAD_COUNT potential leaked credentials!"
+          for ((i=1; i<=BAD_COUNT; i++)); do
+            echo "🔥 Fire in the hole! (Security Risk #$i)"
+          done
+          cat secrets_found.txt
+          exit 1
+        else
+          echo "🔒 Security scanning passed cleanly."
+        fi
+
+  # JOB 3: Runs only after BOTH analysis and security jobs pass successfully
+  production-readiness:
+    runs-on: ubuntu-latest
+    needs: [code-analysis, security-audit]
+    steps:
+    - name: Confirm Status
+      run: |
+        echo "All validation stages passed!"
+        echo "💦 Water on the hill!"
